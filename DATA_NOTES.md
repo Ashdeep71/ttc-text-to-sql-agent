@@ -49,7 +49,7 @@ Stray columns: `Incident ID` (Apr 2019 only), `Unnamed: 10` (bus Dec 2021, one v
    `YU`, `YUS`, `LINE 1`, `YU LINE` → Line 1; `BD`, `B/D`, `BD LINE`, `BLOOR DANFORTH`, `LINE 2 …` → Line 2; `SHP`, `SHEP`, `SHEPPARD` → Line 4; `SRT`, `RT` → Line 3.
    Combined values (`YU/BD`, `YU / BD`, `BD/YU`, `YU & BD`, `YUS/BD/SHP`…) mean the incident was at an interchange.
    Also bus routes (`29 DUFFERIN`, `504 KING`), junk (`999`, `TRANSIT CONTROL`, `EC`) and 876 blanks.
-   → `normalize_line()`: map known spellings, keep combined values as a separate `multi_line` flag, set the rest to null. *(normalize.py)*
+   → `normalize_line()`: returns the line number (`'1'`…`'4'`); interchange incidents list every line (`'1/2'`, `'1/2/4'`); bus routes and junk → null. Maps 100% of real line values. *(normalize.py)*
 6. **Bus/streetcar route type changes.** Integer through 2019 (`52`), sometimes float from 2020 (`52.0`), text with the name in the CSV (`52 LAWRENCE WEST`, cut at 22 characters).
    → `normalize_route()`: extract the leading number, keep the name separately if present. *(normalize.py)*
 7. **Streetcar route oddities:** branch letters (`504A`, `504B`), night routes (`301 QUEEN NIGHT`), non-routes (`RAD`, `OTC`, `TEST CAR`), subway lines (`BD`, `YU`).
@@ -63,7 +63,10 @@ Stray columns: `Incident ID` (Apr 2019 only), `Unnamed: 10` (bus Dec 2021, one v
 11. **Not a station:** whole lines (`YONGE UNIVERSITY LINE`, `BLOOR DANFORTH SUBWAY`), segments (`WELLESLEY TO COLLEGE`), buildings and yards (`WILSON CAPITAL SHOP`, `MC BRIEN BUILDING`).
 12. **Typos and notes:** `BLOOR STATON`, `DOWNSVIEWSTATION`, `WILSON STATION (EXITIN`, `DUPONT STATION ( APPRO`.
     → `normalize_station()`: uppercase, trim, strip `(…)` notes, fix `STN`/`STATON`, then map to a canonical list of ~75 stations
-    (fuzzy prefix match handles truncation). Anything unmatched becomes null and keeps the raw text in `location_raw`. *(normalize.py)*
+    Canonical names are the **current** official names, so renamed stations are merged:
+    `SHEPPARD` → `SHEPPARD-YONGE` (pre-2002), `DOWNSVIEW` → `SHEPPARD WEST` (2017), `EGLINTON WEST` → `CEDARVALE` (2024), `DUNDAS` → `TMU` (2024).
+    Anything unmatched becomes null and keeps the raw text in `location_raw`.
+    Result: all 75 stations found, 93% of rows mapped; the other 7% are lines, yards and segments, not stations. *(normalize.py)*
 13. **Bus/streetcar locations are free text** (137k and 25k distinct values). Casing alone gives 7 versions of `KENNEDY STATION`;
     intersections appear in both orders (`QUEEN AND RONCESVALLES` / `Roncesvalles and Queen`); `STC`, `Entire Route`, `Kennedy Stn`.
     → Light cleanup only: uppercase, trim, collapse spaces, `STN` → `STATION`, `&` → `AND`. Don't try to map every value. *(normalize.py)*
