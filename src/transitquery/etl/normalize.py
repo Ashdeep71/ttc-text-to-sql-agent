@@ -13,12 +13,10 @@ import pandas as pd
 
 
 def _is_blank(value) -> bool:
-    """True for None, NaN, NaT and empty/whitespace strings."""
-    if value is None:
+    """True for None, NaN, NaT, pd.NA and empty/whitespace strings."""
+    if value is None or value is pd.NA or value is pd.NaT:
         return True
     if isinstance(value, float) and math.isnan(value):
-        return True
-    if value is pd.NaT:
         return True
     return isinstance(value, str) and not value.strip()
 
