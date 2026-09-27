@@ -91,8 +91,12 @@ class StepLog:
         return self.drop(df, df.duplicated(), "exact duplicate")
 
     def finish(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Log the final count. The step counts ride along in df.attrs for run.py's README."""
         logger.info("%s: %d clean rows (%.1f%% of raw)", self.name, len(df), 100 * len(df) / max(self.rows_in, 1))
-        return df.reset_index(drop=True)
+        df = df.reset_index(drop=True)
+        df.attrs["rows_in"] = self.rows_in
+        df.attrs["steps"] = list(self.steps)
+        return df
 
 
 # --- Helpers --------------------------------------------------------------------
@@ -182,4 +186,4 @@ def clean_surface(raw: pd.DataFrame, name: str, min_year: int = MIN_YEAR) -> pd.
 
     df = df[SURFACE_OUTPUT]
     df = log.drop_duplicates(df)
-    return log.finish(df)
+    return log.finish(df.sort_values("occurred_at", kind="stable"))

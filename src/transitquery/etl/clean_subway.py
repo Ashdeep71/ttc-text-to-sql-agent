@@ -85,7 +85,7 @@ def clean(raw: pd.DataFrame, min_year: int = MIN_YEAR) -> pd.DataFrame:
 
     df = df[OUTPUT]
     df = log.drop_duplicates(df)
-    return log.finish(df)
+    return log.finish(df.sort_values("occurred_at", kind="stable"))
 
 
 def main(min_year: int = MIN_YEAR) -> pd.DataFrame:
