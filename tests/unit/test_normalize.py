@@ -244,6 +244,7 @@ def test_every_station_maps_to_itself():
         ("Queen&Leslie", "QUEEN AND LESLIE"),
         ("  QUEEN   AND  LESLIE ", "QUEEN AND LESLIE"),
         ("Entire Route.", "ENTIRE ROUTE"),
+        ("St. Clair West Station", "ST CLAIR WEST STATION"),
     ],
 )
 def test_normalize_location(raw, expected):

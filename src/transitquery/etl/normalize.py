@@ -170,13 +170,14 @@ def normalize_station(value) -> str | None:
 
 def normalize_location(value) -> str | None:
     """Light cleanup of free-text locations: 'Kennedy Stn' -> 'KENNEDY STATION',
-    'Queen & Leslie' -> 'QUEEN AND LESLIE'. Doesn't try to map every value."""
+    'Queen & Leslie' -> 'QUEEN AND LESLIE', 'St. Clair' -> 'ST CLAIR'.
+    Doesn't try to map every value."""
     if _is_blank(value):
         return None
-    text = _clean_text(value)
+    text = _clean_text(value).replace(".", "")
     text = re.sub(r"\s*&\s*", " AND ", text)
-    text = re.sub(r"\bSTN\b\.?", "STATION", text)
-    text = text.rstrip(".,;: ")
+    text = re.sub(r"\bSTN\b", "STATION", text)
+    text = text.rstrip(",;: ")
     return text or None
 
 
