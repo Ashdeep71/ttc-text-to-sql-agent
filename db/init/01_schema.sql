@@ -1,3 +1,19 @@
+-- All project tables live in the ttc schema instead of public.
+CREATE SCHEMA ttc;
+COMMENT ON SCHEMA ttc IS 'TTC delay data (subway, bus, streetcar) from City of Toronto Open Data.';
+
+-- Everything below is created in ttc. The database default means later sessions
+-- (the loader, psql) also find the tables without writing ttc. in front.
+SET search_path TO ttc;
+DO $$
+BEGIN
+    EXECUTE format('ALTER DATABASE %I SET search_path = ttc, public', current_database());
+END
+$$;
+
+
+-- ============ subway_delays ============
+
 CREATE TABLE subway_delays(
     id integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     occurred_at timestamptz NOT NULL,
