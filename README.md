@@ -82,11 +82,13 @@ The image is `postgres:16` with the setup scripts and processed data baked in. T
 
 ```bash
 docker build -f db/Dockerfile -t transitquery-db .
-docker run -d --name transitquery-db -p 5432:5432 \
+docker run -d --name transitquery-db -p 5433:5432 \
   -e POSTGRES_PASSWORD=<admin-password> \
   -e TRANSITQUERY_RO_PASSWORD=<readonly-password> \
   transitquery-db
 ```
+
+The container is published on host port **5433** so it doesn't clash with a locally installed Postgres on 5432. The app reads the port from `TRANSITQUERY_DB_PORT` in `.env`.
 
 The startup scripts in `db/init/` run in order:
 
