@@ -16,6 +16,7 @@ from typing import Any, Self
 
 import psycopg
 from psycopg import errors
+from psycopg.abc import Query
 from psycopg_pool import ConnectionPool, PoolTimeout
 
 from transitquery.config import Settings
@@ -88,7 +89,7 @@ class Database:
     def __exit__(self, *exc) -> None:
         self.close()
 
-    def query(self, sql: str, params: tuple | dict | None = None,
+    def query(self, sql: Query, params: tuple | dict | None = None,
               max_rows: int = MAX_LIMIT) -> QueryResult:
         """Run one statement read-only and return at most max_rows rows."""
         try:
