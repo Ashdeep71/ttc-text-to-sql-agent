@@ -4,7 +4,7 @@ Ask questions about Toronto transit delays in plain English and get answers back
 
 TransitQuery is a text-to-SQL agent over the TTC's public delay records for subway, bus and streetcar (about 1.24 million incidents, January 2014 to August 2026). An LLM writes PostgreSQL queries, and an MCP server checks and runs them against a read-only database. When a query fails, the agent reads the error and tries again.
 
-> **Status: work in progress.** The data pipeline, the database and the SQL validator are built. The MCP server, the agent, the API and the evaluation suite are next. See [Roadmap](#roadmap).
+> **Status: work in progress.** The data pipeline, the database and the MCP server are built, and the server already works with Claude Desktop. The agent, the API and the evaluation suite are next. See [Roadmap](#roadmap).
 
 ## What it shows
 
@@ -19,10 +19,10 @@ TransitQuery is a text-to-SQL agent over the TTC's public delay records for subw
                │
      ┌─────────▼──────────┐        ┌──────────────────────┐
      │  LangGraph agent   │  MCP   │      MCP server      │
-     │  (OpenAI model)    ├───────►│ list_tables          │
+     │  (OpenAI model)    ├───────►│ list_tables          │  ✅ built
      │  generate → run →  │        │ describe_table       │
      │  retry on error    │        │ run_query            │
-     └─────────▲──────────┘        │   └─ validator.py    │  ✅ built
+     └─────────▲──────────┘        │   └─ validator.py    │
                │                   └──────────┬───────────┘
      ┌─────────┴──────────┐                   │ transitquery_ro
      │  FastAPI  /ask     │        ┌──────────▼───────────┐
@@ -107,11 +107,59 @@ docker exec -it transitquery-db psql -U transitquery_ro -d postgres -h localhost
 # ERROR:  cannot execute DELETE in a read-only transaction
 ```
 
-### 3. Run the tests
+### 3. Run the MCP server
+
+The server exposes three tools to any MCP client:
+
+| Tool | Returns |
+|---|---|
+| `list_tables()` | Each table with its description and approximate row count |
+| `describe_table(name)` | Columns with type, nullability and meaning, plus 5 sample rows |
+| `run_query(sql)` | `{columns, rows, row_count, truncated, executed_sql}`, or an error message the model can use to fix the query |
 
 ```bash
-uv run pytest
+uv run python -m transitquery.mcp_server                                # stdio (for Claude Desktop)
+uv run python -m transitquery.mcp_server --transport streamable-http    # HTTP on 127.0.0.1:8001/mcp
 ```
+
+Settings come from `.env` in the project root (see [`src/transitquery/config.py`](src/transitquery/config.py)). Every variable starts with `TRANSITQUERY_`, for example `TRANSITQUERY_DB_PORT` or `TRANSITQUERY_STATEMENT_TIMEOUT_MS`. The server finds `.env` by absolute path, so it works whatever directory it's started from.
+
+`truncated` is true only when the server's own LIMIT cut the result short. A LIMIT you wrote yourself doesn't count.
+
+### 4. Connect Claude Desktop
+
+In Claude Desktop, open **Settings → Developer → Edit Config** and add the server under `mcpServers`, keeping any keys already in the file:
+
+```json
+{
+  "mcpServers": {
+    "transitquery": {
+      "command": "C:\\path\\to\\transitquery\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "transitquery.mcp_server"]
+    }
+  }
+}
+```
+
+On macOS or Linux the command is `/path/to/transitquery/.venv/bin/python`. Pointing at the project's own Python means `uv` doesn't need to be on Claude's PATH. No password goes in this file, because the server reads it from `.env`.
+
+Quit Claude Desktop completely (from the system tray icon or menu bar, not just by closing the window) and reopen it. `transitquery` should show as running under Settings → Developer. Then try:
+
+- *Which subway station had the most delays in winter 2025?*
+- *What are the top 5 causes of bus delays by total minutes?*
+- *Delete all subway delays.* (This is refused.)
+
+If the server doesn't start, run the same command in a terminal to see the error. If it waits silently, it's working: it's waiting for a client. Claude Desktop also writes a log, `mcp-server-transitquery.log`, in its `logs` folder.
+
+### 5. Run the tests
+
+```bash
+uv run pytest                      # everything
+uv run pytest tests/unit           # no database needed
+uv run pytest tests/integration    # needs the transitquery-db container running
+```
+
+The integration tests call the MCP tools end to end against the real database. They also test the read-only role directly, without the validator, and check that the statement timeout cancels an expensive query. If the database isn't reachable, they're skipped rather than failed.
 
 ## Safety model
 
@@ -133,7 +181,9 @@ Rejection messages are written for the LLM, so the agent can fix the query and r
 - `default_transaction_read_only = on`.
 - `statement_timeout = 5s`, which cancels runaway queries.
 
-Either check alone should stop a write.
+On top of the role, [`db.py`](src/transitquery/mcp_server/db.py) runs every query in its own `READ ONLY` transaction with a per-query timeout, and always rolls that transaction back, even when the query succeeds.
+
+Either check alone should stop a write. The integration tests check each one separately.
 
 ## Project layout
 
@@ -141,13 +191,16 @@ Either check alone should stop a write.
 transitquery/
 ├── src/transitquery/
 │   ├── etl/            download.py, clean_{subway,bus,streetcar,codes}.py, normalize.py, common.py, run.py
-│   └── mcp_server/     validator.py
+│   ├── mcp_server/     server.py (the 3 tools), validator.py, db.py (read-only execution)
+│   └── config.py       settings from .env
 ├── db/                 Dockerfile, init/ (schema, roles, loader)
 ├── data/
 │   ├── raw/            source files from Toronto Open Data (gitignored)
 │   └── processed/      cleaned, gzipped CSVs, loaded into Postgres
 ├── notebooks/          01-cleaner.ipynb (data exploration)
-├── tests/unit/         normalizers, cleaners, ETL run, validator
+├── tests/
+│   ├── unit/           normalizers, cleaners, ETL run, validator
+│   └── integration/    MCP tools, read-only role and timeout against the real database
 └── DATA_NOTES.md       known data issues and how each is handled
 ```
 
@@ -156,7 +209,8 @@ transitquery/
 - [x] ETL: download, clean and normalize all three modes
 - [x] PostgreSQL schema with column comments, read-only role, preloaded Docker image
 - [x] SQL validator with unit tests
-- [ ] MCP server (`list_tables`, `describe_table`, `run_query`) over stdio and streamable HTTP, plus a Claude Desktop config
+- [x] MCP server (`list_tables`, `describe_table`, `run_query`) over stdio and streamable HTTP, plus a Claude Desktop config
+- [x] Integration tests against the real database
 - [ ] LangGraph agent: generate SQL, run it, retry up to 3 times on error, then summarize the result
 - [ ] FastAPI: `POST /ask`, `GET /health`, `GET /tables`
 - [ ] Evaluation: 60–100 hand-written questions with reference SQL; report execution accuracy, self-correction rate and latency
