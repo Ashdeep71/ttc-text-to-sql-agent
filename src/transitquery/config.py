@@ -36,6 +36,13 @@ class Settings(BaseSettings):
     mcp_host: str = "127.0.0.1"
     mcp_port: int = 8001
 
+    # Agent. The OpenAI names have no prefix: they're the names langchain-openai uses.
+    openai_api_key: SecretStr | None = Field(None, validation_alias="OPENAI_API_KEY")
+    openai_model: str | None = Field(None, validation_alias="OPENAI_MODEL")
+    # Where the agent finds the MCP server: an HTTP URL, or unset to start it over stdio.
+    mcp_url: str | None = None
+    agent_max_attempts: int = 3
+
     @property
     def conninfo(self) -> str:
         """Connection string for psycopg; make_conninfo quotes the password safely."""
