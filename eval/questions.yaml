@@ -1,0 +1,237 @@
+# Evaluation questions with reference ("gold") SQL.
+#
+# How a prediction is scored (src/transitquery/eval/compare.py):
+#   - Both queries run through the same validator and read-only database.
+#   - Every gold column must appear among the predicted columns (by values, not by name),
+#     so extra columns in the prediction are fine. Gold SQL therefore selects only the
+#     columns that ARE the answer.
+#   - If the gold SQL has a top-level ORDER BY, row order matters, and a longer predicted
+#     ranking is accepted when it starts with the gold rows ("top 3" answered with a top 10).
+#   - Numbers are compared rounded to 1 decimal place.
+#
+# Definitions match the agent's DOMAIN_HINTS: a delay is min_delay > 0; rush hour is
+# weekdays 7-9 and 16-18; seasons are meteorological (winter 2025 = Dec 2024 - Feb 2025).
+# Keep these questions different from the EXAMPLES in prompts.py.
+
+- id: easy-01
+  question: How many subway delays were there in 2024?
+  mode: subway
+  difficulty: easy
+  feature: aggregation
+  gold_sql: |
+    SELECT COUNT(*) FROM subway_delays
+    WHERE min_delay > 0 AND occurred_at >= '2024-01-01' AND occurred_at < '2025-01-01'
+
+- id: easy-02
+  question: What was the total bus delay time in minutes in 2023?
+  mode: bus
+  difficulty: easy
+  feature: aggregation
+  gold_sql: |
+    SELECT SUM(min_delay) FROM bus_delays
+    WHERE min_delay > 0 AND occurred_at >= '2023-01-01' AND occurred_at < '2024-01-01'
+
+- id: easy-03
+  question: What was the average streetcar delay in minutes in 2024?
+  mode: streetcar
+  difficulty: easy
+  feature: aggregation
+  gold_sql: |
+    SELECT AVG(min_delay) FROM streetcar_delays
+    WHERE min_delay > 0 AND occurred_at >= '2024-01-01' AND occurred_at < '2025-01-01'
+
+- id: easy-04
+  question: Which subway station had the most delays in 2024?
+  mode: subway
+  difficulty: easy
+  feature: ranking
+  gold_sql: |
+    SELECT station FROM subway_delays
+    WHERE min_delay > 0 AND station IS NOT NULL
+      AND occurred_at >= '2024-01-01' AND occurred_at < '2025-01-01'
+    GROUP BY station ORDER BY COUNT(*) DESC LIMIT 1
+
+- id: easy-05
+  question: How many different bus routes had at least one delay in 2025?
+  mode: bus
+  difficulty: easy
+  feature: aggregation
+  gold_sql: |
+    SELECT COUNT(DISTINCT route) FROM bus_delays
+    WHERE min_delay > 0 AND occurred_at >= '2025-01-01' AND occurred_at < '2026-01-01'
+
+- id: easy-06
+  question: Which day of the week had the most subway delays in 2023?
+  mode: subway
+  difficulty: easy
+  feature: ranking
+  gold_sql: |
+    SELECT day_of_week FROM subway_delays
+    WHERE min_delay > 0 AND occurred_at >= '2023-01-01' AND occurred_at < '2024-01-01'
+    GROUP BY day_of_week ORDER BY COUNT(*) DESC LIMIT 1
+
+- id: medium-01
+  question: How many bus delays happened during rush hour in 2024?
+  mode: bus
+  difficulty: medium
+  feature: time window
+  gold_sql: |
+    SELECT COUNT(*) FROM bus_delays
+    WHERE min_delay > 0 AND NOT is_weekend
+      AND (hour BETWEEN 7 AND 9 OR hour BETWEEN 16 AND 18)
+      AND occurred_at >= '2024-01-01' AND occurred_at < '2025-01-01'
+
+- id: medium-02
+  question: What were the top 5 bus routes by total delay minutes in 2024?
+  mode: bus
+  difficulty: medium
+  feature: ranking
+  gold_sql: |
+    SELECT route FROM bus_delays
+    WHERE min_delay > 0 AND occurred_at >= '2024-01-01' AND occurred_at < '2025-01-01'
+    GROUP BY route ORDER BY SUM(min_delay) DESC LIMIT 5
+
+- id: medium-03
+  question: What were the 3 most common causes of subway delays in 2025?
+  mode: subway
+  difficulty: medium
+  feature: join to delay codes
+  gold_sql: |
+    SELECT c.description FROM subway_delays s
+    LEFT JOIN delay_codes c ON c.code = s.code
+    WHERE s.min_delay > 0 AND s.occurred_at >= '2025-01-01' AND s.occurred_at < '2026-01-01'
+    GROUP BY c.description ORDER BY COUNT(*) DESC LIMIT 3
+
+- id: medium-04
+  question: In 2023, what was the average streetcar delay on weekends compared with weekdays?
+  mode: streetcar
+  difficulty: medium
+  feature: aggregation
+  gold_sql: |
+    SELECT AVG(min_delay) FROM streetcar_delays
+    WHERE min_delay > 0 AND occurred_at >= '2023-01-01' AND occurred_at < '2024-01-01'
+    GROUP BY is_weekend
+
+- id: medium-05
+  question: How many subway incidents in 2024 caused no delay at all?
+  mode: subway
+  difficulty: medium
+  feature: aggregation
+  gold_sql: |
+    SELECT COUNT(*) FROM subway_delays
+    WHERE min_delay = 0 AND occurred_at >= '2024-01-01' AND occurred_at < '2025-01-01'
+
+- id: medium-06
+  question: What was the average delay at Kennedy station in 2024?
+  mode: subway
+  difficulty: medium
+  feature: aggregation
+  gold_sql: |
+    SELECT AVG(min_delay) FROM subway_delays
+    WHERE min_delay > 0 AND station = 'KENNEDY'
+      AND occurred_at >= '2024-01-01' AND occurred_at < '2025-01-01'
+
+- id: medium-07
+  question: How many delays were there on Line 1 in winter 2025?
+  mode: subway
+  difficulty: medium
+  feature: time window
+  gold_sql: |
+    SELECT COUNT(*) FROM subway_delays
+    WHERE min_delay > 0 AND line_code LIKE '%1%'
+      AND occurred_at >= '2024-12-01' AND occurred_at < '2025-03-01'
+
+- id: medium-08
+  question: What was the total delay time in minutes on the 504 streetcar in 2025?
+  mode: streetcar
+  difficulty: medium
+  feature: aggregation
+  gold_sql: |
+    SELECT SUM(min_delay) FROM streetcar_delays
+    WHERE min_delay > 0 AND route = 504
+      AND occurred_at >= '2025-01-01' AND occurred_at < '2026-01-01'
+
+- id: hard-01
+  question: Compare total delay minutes for subway, bus and streetcar in 2024.
+  mode: all
+  difficulty: hard
+  feature: cross-mode union
+  # Totals only: the mode labels the agent picks ('Bus', 'bus', ...) shouldn't decide the score.
+  gold_sql: |
+    SELECT SUM(min_delay) FROM subway_delays
+    WHERE min_delay > 0 AND occurred_at >= '2024-01-01' AND occurred_at < '2025-01-01'
+    UNION ALL
+    SELECT SUM(min_delay) FROM bus_delays
+    WHERE min_delay > 0 AND occurred_at >= '2024-01-01' AND occurred_at < '2025-01-01'
+    UNION ALL
+    SELECT SUM(min_delay) FROM streetcar_delays
+    WHERE min_delay > 0 AND occurred_at >= '2024-01-01' AND occurred_at < '2025-01-01'
+
+- id: hard-02
+  question: What was the most common reason for bus delays in 2025?
+  mode: bus
+  difficulty: hard
+  feature: join to delay codes
+  # 2025 bus reasons are TTC codes, not the old incident text.
+  gold_sql: |
+    SELECT c.description FROM bus_delays b
+    LEFT JOIN delay_codes c ON c.code = b.code
+    WHERE b.min_delay > 0 AND b.occurred_at >= '2025-01-01' AND b.occurred_at < '2026-01-01'
+    GROUP BY c.description ORDER BY COUNT(*) DESC LIMIT 1
+
+- id: hard-03
+  question: What was the most common reason for bus delays in 2022?
+  mode: bus
+  difficulty: hard
+  feature: era-dependent column
+  # Same question, different era: up to 2024 the reason is the incident text.
+  gold_sql: |
+    SELECT incident FROM bus_delays
+    WHERE min_delay > 0 AND occurred_at >= '2022-01-01' AND occurred_at < '2023-01-01'
+    GROUP BY incident ORDER BY COUNT(*) DESC LIMIT 1
+
+- id: hard-04
+  question: Which subway station had the single longest delay in 2024?
+  mode: subway
+  difficulty: hard
+  feature: ranking
+  gold_sql: |
+    SELECT station FROM subway_delays
+    WHERE station IS NOT NULL AND occurred_at >= '2024-01-01' AND occurred_at < '2025-01-01'
+    ORDER BY min_delay DESC LIMIT 1
+
+- id: hard-05
+  question: Which hour of the day had the most delays on Line 2 in 2024?
+  mode: subway
+  difficulty: hard
+  feature: time window
+  gold_sql: |
+    SELECT hour FROM subway_delays
+    WHERE min_delay > 0 AND line_code LIKE '%2%'
+      AND occurred_at >= '2024-01-01' AND occurred_at < '2025-01-01'
+    GROUP BY hour ORDER BY COUNT(*) DESC LIMIT 1
+
+- id: hard-06
+  question: How many bus routes had more than 100 rush-hour delays in 2024?
+  mode: bus
+  difficulty: hard
+  feature: nested aggregation
+  gold_sql: |
+    SELECT COUNT(*) FROM (
+      SELECT route FROM bus_delays
+      WHERE min_delay > 0 AND NOT is_weekend
+        AND (hour BETWEEN 7 AND 9 OR hour BETWEEN 16 AND 18)
+        AND occurred_at >= '2024-01-01' AND occurred_at < '2025-01-01'
+      GROUP BY route HAVING COUNT(*) > 100
+    ) AS busy_routes
+
+- id: hard-07
+  question: Which full calendar year had the most subway delays?
+  mode: subway
+  difficulty: hard
+  feature: ranking
+  # 2026 is a partial year in the data (to August), so it's excluded.
+  gold_sql: |
+    SELECT EXTRACT(YEAR FROM occurred_at) FROM subway_delays
+    WHERE min_delay > 0 AND occurred_at < '2026-01-01'
+    GROUP BY 1 ORDER BY COUNT(*) DESC LIMIT 1
